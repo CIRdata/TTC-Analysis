@@ -11,7 +11,7 @@ For the analysis I will download the TTC vehicle locations every 30 seconds for 
 
 ### Project Files
 This is a Jupyter Notebook based project, you are meant to work thru the Notebooks based on the numerical ordering.
-* [1_Analysis_Setup.ipynb](1_Analysis_Setup.ipynb): This walks you thru the project setup, including creating the settings file, selecting the analysis parameter, and recording your database connection parameters.  It then walks you thru running the [download_data.py](dowwnload_data.py) and [db_calculations.sql](db_calculations.sql) scripts which are responsible for setting up the postgres database, downloading the data into the datbase, cleaning the data and preparing the data for further analysis.
+* [1_Analysis_Setup.ipynb](1_Analysis_Setup.ipynb): This walks you thru the project setup, including creating the settings file, selecting the analysis parameter, and recording your database connection parameters.  It then walks you thru running the [download_data.py](download_data.py) and [db_calculations.sql](db_calculations.sql) scripts which are responsible for setting up the postgres database, downloading the data into the datbase, cleaning the data and preparing the data for further analysis.
 * [2_Route_Data_Review.ipynb](2_Route_Data_Review.ipynb): Review of the route configuration data download from the XML feed
 * [3_Location_Data_Review.ipynb](3_Location_Data_Review.ipynb): Review of the vehicle location data download from the XML feed
 
