@@ -160,7 +160,7 @@ select min(actual_time) - min(actual_time) % 30 start_time, (max(actual_time) - 
 from calc_location_log_01
 )
 
-select start_time+i*30 analysis_time
+select start_time+i*30 analysis_time, extract('hour' from fn_epoch_to_dt(start_time+i*30)) hr, fn_epoch_to_dt(start_time+i*30)::date dt, fn_epoch_to_dt(start_time+i*30) dt_time
 into analysis_times
 from generate_series (0,(select analysis_periods from a)) s(i) 
 cross join a;
@@ -277,7 +277,7 @@ drop materialized view if exists calc_location_log_05 cascade;
 create materialized view calc_location_log_05 as 
 select pos.id, pos.analysis_time, pos.prev_report_time, pos.aft_report_time, 
     (pos.analysis_time - pos.prev_report_time)::float/(pos.aft_report_time - pos.prev_report_time)::float percent_to_next_point,
-    pos.dirtag, pos.routetag, pg.path_geom,
+    pg.directiontag dirtag, pos.routetag, pg.path_geom,
     st_linelocatepoint(pg.path_geom, pos.prev_geom_position) prev_path_pos, 
     st_linelocatepoint(pg.path_geom, pos.aft_geom_position) aft_path_pos,
     case when st_distance(pg.path_geom::geography, pos.prev_geom_position::geography) > 20 then 1 else 0 end flag_offpath
@@ -441,22 +441,39 @@ calc_stops_01_locations:
 - create table of stops with the locations of all of the stops
 
 */
+
 drop table  if exists calc_stops_01_locations;
 with d as (
 select ds.oid, ds.tag, ds.directiontag, ds.routetag,
     st_setsrid(st_makepoint(rs.lon::double precision, rs.lat::double precision), 4326) AS stop_geom
 from tbl_ttc_dir_stop ds
 inner join tbl_ttc_route_stop rs on rs.tag = ds.tag and ds.routetag = rs.routetag
-)
+),
 
+c as (
 select d.oid, d.tag stop_tag, p.directiontag, p.routetag, d.stop_geom,
     st_linelocatepoint(p.path_geom, d.stop_geom) stop_pos
-into calc_stops_01_locations
 from d
 inner join calc_direction_paths p
-on p.directiontag = d.directiontag;
+on p.directiontag = d.directiontag
+),
+
+cent as (
+select stop_tag, st_centroid(st_union(stop_geom)) stop_geom
+from c 
+group by stop_tag
+
+)
 
 
+select c.oid, c.stop_tag, c.directiontag, c.routetag, cent.stop_geom, c.stop_pos
+into calc_stops_01_locations
+from c
+inner join cent on cent.stop_tag = c.stop_tag;
+
+                             
+create index inx_calc_stops_01_locations_stop_tag on calc_stops_01_locations (stop_tag);
+                             
 /*
 calc_stops_02_pickups:
 - finds the analysis_times at which vehicles pass a stop.. the assumption here is that this is when passengers would get picked
@@ -467,10 +484,61 @@ select s.oid, s.stop_tag, l.dirtag, l.routetag, s.stop_geom, l.analysis_time, l.
 into calc_stops_02_pickups
 from calc_location_log_07 l
 inner join calc_stops_01_locations s
-on l.dirtag = s.directiontag and s.stop_pos between l.st_path_pos and l.end_path_pos
+    on s.stop_pos between l.st_path_pos and l.end_path_pos
+    and s.directiontag=l.dirtag;
 
 
 
 
+/*
+calc_stops_01_route_core:
+- In this query we are trying to define the 'core' sections of a route, so the stops which all branches of the routes variants stop at. This matches up well as a proxy in identifying which are the 'most important' sections of a route in some cases like the 501 Queen St route, where stops between Roncesvalles and Greenwood are serviced by all routes and are what I would consider 'most important' sections.  However, this doesn't work in all cases.. eg. the 32 Eglinton West route, only the stops from Keele to the Eglinton West (@ Allen Rd) subway station are on all routes, the section between Eglinton West and Eglinton Stations are not covered by all routes, but I would expect that to be one of the 'core' sections.
+- this isn't really needed for the main part of the anlysis that i'm looking to do, but I'm going to keep this in here as I might want to revisit at a later date
+                               
+                               
+drop table if exists calc_stops_01_route_core;
+with a as (
+select substring(directiontag,0,position('_' in directiontag)+2) route_dir, stop_tag, stop_geom, routetag, count(*) variant_count
+from calc_stops_01_locations
+group by substring(directiontag,0,position('_' in directiontag)+2), stop_geom, stop_tag, routetag
+),
+
+mv as (
+select route_dir, max(variant_count) max_variants
+from a
+group by route_dir
+),
+
+c as (
+select a.routetag, a.route_dir, a.stop_tag, max_variants
+
+from a
+inner join mv on mv.route_dir = a.route_dir and mv.max_variants = a.variant_count
+),
+
+
+d as (
+select *, row_number() over (partition by directiontag order by stop_pos) coreoid
+from calc_stops_01_locations l
+inner join c
+    on c.stop_tag = l.stop_tag and c.routetag = l.routetag
+)
+
+
+select directiontag, route_dir, min(stop_pos) min_stop_pos, max(stop_pos) max_stop_pos
+into calc_stops_01_route_core
+from d
+group by directiontag, route_dir
+
+
+select l.*, substring(l.directiontag,0,position('_' in l.directiontag)+2) route_dir,
+    case when c.directiontag is null then 'non-core' else 'core' end core
+from calc_stops_01_locations l
+left join calc_stops_01_route_core c 
+    on c.directiontag = l.directiontag
+    and l.stop_pos >= c.min_stop_pos
+    and l.stop_pos <= c.max_stop_pos
+where l.routetag = '504_1'
+*/
 
 

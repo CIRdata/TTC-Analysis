@@ -193,11 +193,11 @@ for child in oxml:
 sql = """create index inx_tbl_ttc_location_log_id on tbl_ttc_location_log (id);
 
 create or replace function fn_epoch_to_dt(bigint)
-    returns timestamp with Time Zone
+    returns timestamp
     language 'sql'
     cost 100
 as $BODY$
-select timestamp with Time Zone 'epoch' + $1 * interval '1 second';
+select (timestamp with Time Zone 'epoch' + $1 * interval '1 second')::timestamp without time zone;
 $BODY$;"""
 
 hf.execsql(sql,db)
