@@ -489,6 +489,87 @@ inner join calc_stops_01_locations s
 
 
 
+                             
+/*
+calc_waittimes:
+- we want to see how long the wait time between vehicles are at each stop
+*/
+drop table  if exists calc_waittimes;
+with a as (
+select p.stop_tag, a.analysis_time, min(p.analysis_time) - a.analysis_time waittime, a.hr, a.dt
+
+from calc_stops_02_pickups p
+inner join analysis_times a on a.analysis_time <= p.analysis_time and (a.analysis_time+5400>p.analysis_time)
+group by p.stop_tag, a.analysis_time, a.hr, a.dt)
+
+select a.stop_tag, hr, a.dt, avg(waittime) avg_waittime
+into temp tmp_b
+from a
+group by a.stop_tag, a.hr, a.dt;
+
+with sg as (select distinct stop_geom, stop_tag from calc_stops_01_locations)
+
+select b.*, sg.stop_geom
+into calc_waittimes
+from tmp_b b
+inner join sg on sg.stop_tag = b.stop_tag;
+
+drop table tmp_b;
+                             
+                             
+
+drop table  if exists toronto_streets_01;
+select *, st_linemerge(geom) mergegeom, st_startpoint(st_linemerge(geom))::text start_geom, st_endpoint(st_linemerge(geom))::text end_geom
+into toronto_streets_01
+from toronto_streets
+where fcode_desc in ('Collector','Major Arterial','Minor Arterial','Busway');
+
+drop table  if exists toronto_streets_02_junctions;
+select distinct ST_Intersection(a.geom, b.geom)
+into toronto_streets_02_junctions
+from toronto_streets_01 a inner join toronto_streets_01 b 
+on a.geo_id <> b.geo_id 
+    and a.start_geom <> b.end_geom
+    and a.end_geom <> b.start_geom
+
+drop table  toronto_streets_03_main_intersections;
+with sag as (
+select (st_dump(st_voronoipolygons(st_collect(st_intersection)))).geom stop_area_geom
+from toronto_streets_02_junctions
+),
+
+ms as (
+select distinct stop_area_geom
+from sag
+inner join (select distinct stop_geom from calc_stops_01_locations) c
+    on st_contains(sag.stop_area_geom, c.stop_geom)
+),
+
+rm as (
+select j.st_intersection
+from toronto_streets_02_junctions j
+left join ms on st_contains(ms.stop_area_geom, j.st_intersection)
+where ms.stop_area_geom is null
+),
+
+i as (
+select st_intersection
+from toronto_streets_02_junctions
+--union all select st_setsrid(st_makepoint(lon::float, lat::float), 4326)
+--from ttc_subway_stations
+)
+
+select *
+into toronto_streets_03_main_intersections
+from (
+select (st_dump(st_voronoipolygons(st_collect(st_intersection),0.007))).geom stop_area_geom, 'grouped' grp_type
+from i
+where st_intersection not in (select st_intersection from rm)
+
+union all select (st_dump(st_voronoipolygons(st_collect(st_intersection)))).geom stop_area_geom, 'not grouped' grp_type
+from i
+where st_intersection not in (select st_intersection from rm)) x
+                          
 
 /*
 calc_stops_01_route_core:
