@@ -202,3 +202,19 @@ $BODY$;"""
 
 hf.execsql(sql,db)
 
+
+#download the shapefiles for torontos street network
+import wget
+fn = './data/toronto_streets.zip'
+if os.path.exists(fn)==False:
+    wget.download("https://ckan0.cf.opendata.inter.prod-toronto.ca/download_resource/3a00bc1b-1c2d-40b5-b377-720b6d1b9b13", fn)
+    
+
+#extract the shapefiles from the zip files
+import zipfile
+fn = './data/toronto_streets.zip'
+if os.path.exists('./data/CENTRELINE_WGS84.shp')==False:
+    zfile = zipfile.ZipFile(fn)
+    zfile.extractall('data')
+
+  
